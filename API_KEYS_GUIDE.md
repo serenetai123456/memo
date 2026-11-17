@@ -43,3 +43,11 @@ You need **3 values** in total: two from Supabase and one from Google Gemini (AI
 1. Vercel dashboard > your project > **Settings** > **Environment Variables**.
 2. Add each name and value above for **Production** (and Preview if you like).
 3. Click **Redeploy** so the new values take effect.
+
+---
+
+## Login setup (Supabase Auth)
+1. Run `supabase/auth_policies.sql` in Supabase > SQL Editor (after `schema.sql`).
+2. Supabase > **Authentication** > **Sign In / Providers** > Email: keep it enabled and turn **off** "Allow new users to sign up".
+3. Supabase > **Authentication** > **Users** > **Add user** > create one for each staff member (tick "Auto Confirm User").
+4. Staff sign in at `/login/`. Every other page sends signed-out visitors there.

@@ -15,7 +15,7 @@ const SETTINGS = `<dialog id="settings"><h2>Settings</h2>
 const App = {
   cfg: {}, db: null,
   async init(active) {
-    document.body.insertAdjacentHTML('afterbegin', `<header><b>Guest Complaint Desk</b><a href="/home/" class="${active === 'home' ? 'on' : ''}">Home</a><a href="/dashboard/" class="${active === 'dashboard' ? 'on' : ''}">Dashboard</a><button id="openSet">Settings</button></header>`);
+    document.body.insertAdjacentHTML('afterbegin', `<header><b>Guest Complaint Desk</b>${active === 'login' ? '' : `<a href="/home/" class="${active === 'home' ? 'on' : ''}">Home</a><a href="/dashboard/" class="${active === 'dashboard' ? 'on' : ''}">Dashboard</a>`}<button id="openSet">Settings</button>${active === 'login' ? '' : '<button id="out">Sign out</button>'}</header>`);
     document.body.insertAdjacentHTML('beforeend', SETTINGS);
     try { const r = await fetch('/api/config'); this.cfg = r.ok ? await r.json() : {}; } catch (e) { this.cfg = {}; }
     const url = this.cfg.SUPABASE_URL || ls('sb_url'), key = this.cfg.SUPABASE_ANON_KEY || ls('sb_key');
@@ -32,6 +32,10 @@ const App = {
       catch (e) { this.msg('#setMsg', 'Connection failed: ' + (e.message || 'check the URL and key, and that schema.sql was run.'), 'err'); }
     };
     if (!this.db) { $('main').insertAdjacentHTML('afterbegin', '<div class="note err">Not connected yet. Open Settings and connect your Supabase project.</div>'); $('#settings').showModal(); return false; }
+    const { data: { session } } = await this.db.auth.getSession();
+    if (active === 'login') { if (session) location.href = '/home/'; return true; }
+    if (!session) { location.href = '/login/'; return false; }
+    $('#out').onclick = async () => { await this.db.auth.signOut(); location.href = '/login/'; };
     return true;
   },
   msg(sel, text, cls = '') { $(sel).innerHTML = `<div class="note ${cls}">${esc(text)}</div>`; },
