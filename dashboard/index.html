@@ -1,0 +1,34 @@
+<!doctype html><html lang="en"><head><title>Dashboard</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/shared/styles.css"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script src="/shared/app.js"></script></head><body><main>
+<div id="stats" class="grid stats"></div>
+<div class="grid two" style="margin-top:1rem"><div class="card"><h2>By type (last 90 days)</h2><div id="cats"></div></div><div class="card"><h2>By week</h2><div id="weeks"></div></div></div>
+<div class="card" style="margin-top:1rem"><h2>Repeated complaints</h2><p class="mut">Same type and area, 3 or more times in the last 30 days.</p><div id="rep"></div></div>
+<div class="card" style="margin-top:1rem"><h2>AI analysis</h2><div class="row" style="margin:0 0 .8rem"><button class="btn" id="run">Run analysis</button></div><div id="an" class="mut">No analysis yet. Run one to see likely causes and recommendations.</div></div>
+</main><script>
+(async()=>{ if(!await App.init('dashboard')) return;
+const DAY=864e5, now=Date.now();
+const {data,error}=await App.db.from('complaints').select('*').gte('created_at',new Date(now-90*DAY).toISOString()).order('created_at',{ascending:false});
+if(error) return App.msg('#stats',error.message+' Did you run schema.sql?','err');
+const age=c=>(now-new Date(c.created_at))/DAY, last30=data.filter(c=>age(c)<=30);
+const tw=data.filter(c=>age(c)<7).length, lw=data.filter(c=>age(c)>=7&&age(c)<14).length;
+const card=(n,l)=>'<div class="card stat"><b>'+n+'</b><span>'+l+'</span></div>';
+$('#stats').innerHTML=card(data.length,'complaints (90 days)')+card(tw,'this week (last week: '+lw+')')+card(data.filter(c=>c.status!='Resolved').length,'still open')+card(data.filter(c=>c.severity=='High').length,'high severity');
+function bars(el,map){ const e=Object.entries(map), m=Math.max(1,...e.map(x=>x[1])); $(el).innerHTML=e.length?e.map(([k,v])=>'<div class="bar"><span>'+esc(k)+'</span><i style="width:'+(v/m*60)+'%"></i><span>'+v+'</span></div>').join(''):'No data yet.'; }
+const cats={}; data.forEach(c=>{const k=c.category||'Uncategorized'; cats[k]=(cats[k]||0)+1;});
+bars('#cats',Object.fromEntries(Object.entries(cats).sort((a,b)=>b[1]-a[1])));
+const wk={}; for(let i=5;i>=0;i--) wk[i==0?'This week':i+' wk ago']=0; data.forEach(c=>{const i=Math.floor(age(c)/7); if(i<6) wk[i==0?'This week':i+' wk ago']++;}); bars('#weeks',wk);
+const g={}; last30.forEach(c=>{const k=(c.category||'Uncategorized')+'|'+c.area; (g[k]=g[k]||[]).push(c);});
+const reps=Object.entries(g).filter(([k,v])=>v.length>=3).sort((a,b)=>b[1].length-a[1].length);
+$('#rep').innerHTML=reps.length?'<table><tr><th>Issue</th><th>Times</th><th>Open</th><th>Examples</th></tr>'+reps.map(([k,v])=>{const [c,a]=k.split('|'); return '<tr><td>'+esc(c)+' in '+esc(a)+'</td><td>'+v.length+'</td><td>'+v.filter(x=>x.status!='Resolved').length+'</td><td>'+v.slice(0,3).map(x=>esc(x.ai_summary||x.description)).join('; ')+'</td></tr>';}).join('')+'</table>':'No repeated complaints right now.';
+function show(a){ const rc=a.root_causes||[], rec=a.recommendations||[];
+  $('#an').className=''; $('#an').innerHTML='<p>'+esc(a.feedback_summary)+'</p><h3>Likely causes</h3><table><tr><th>Issue</th><th>Likely cause</th><th>Evidence</th></tr>'+rc.map(r=>'<tr><td>'+esc(r.issue)+'</td><td>'+esc(r.likely_cause)+'</td><td>'+esc(r.evidence)+'</td></tr>').join('')+'</table><h3 style="margin-top:1rem">Recommendations</h3><table><tr><th>Action</th><th>Priority</th><th>Owner</th></tr>'+rec.map(r=>'<tr><td>'+esc(r.action)+'</td><td class="'+esc(r.priority)+'">'+esc(r.priority)+'</td><td>'+esc(r.owner)+'</td></tr>').join('')+'</table>'+(a.created_at?'<p class="mut">Saved '+App.fmt(a.created_at)+'</p>':''); }
+const prev=await App.db.from('analyses').select('*').order('created_at',{ascending:false}).limit(1);
+if(prev.data&&prev.data[0]) show(prev.data[0]);
+$('#run').onclick=async()=>{ const b=$('#run'); b.disabled=true; b.textContent='Analyzing…';
+  try{ if(!last30.length) throw new Error('No complaints in the last 30 days.');
+    const a=await App.ai('analyze',{complaints:last30.map(c=>({date:c.created_at.slice(0,10),area:c.area,room:c.room_number,category:c.category,severity:c.severity,status:c.status,description:c.description}))});
+    const row={period_start:new Date(now-30*DAY).toISOString().slice(0,10),period_end:new Date(now).toISOString().slice(0,10),total_complaints:last30.length,root_causes:a.root_causes,recommendations:a.recommendations,feedback_summary:a.feedback_summary};
+    const s=await App.db.from('analyses').insert(row).select().single(); show(s.data||a);
+  }catch(e){ App.msg('#an',e.message,'err'); }
+  b.disabled=false; b.textContent='Run analysis'; };
+})();
+</script></body></html>

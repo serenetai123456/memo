@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><head><title>Log a complaint</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/shared/styles.css"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script src="/shared/app.js"></script></head><body><main>
+<div class="grid two"><div class="card"><h2>Log a complaint</h2>
+<form id="f"><label for="guest_name">Guest name</label><input id="guest_name">
+<label for="room_number">Room number</label><input id="room_number">
+<label for="area">Area</label><select id="area"><option>Room</option><option>Lobby</option><option>Restaurant</option><option>Pool</option><option>Parking</option><option>Reception</option><option>Other</option></select>
+<label for="channel">How it was received</label><select id="channel"><option>Front desk</option><option>Phone</option><option>Email</option><option>Online review</option></select>
+<label for="severity">Severity</label><select id="severity"><option>Low</option><option selected>Medium</option><option>High</option></select>
+<label for="description">What happened</label><textarea id="description" rows="4" required></textarea>
+<div class="row"><button class="btn" id="save">Save complaint</button></div><div id="msg"></div></form></div>
+<div class="card"><h2>Recent complaints</h2><div id="list" class="mut">Loading…</div></div></div></main>
+<script>
+(async()=>{ if(!await App.init('home')) return;
+const ST=['Open','In progress','Resolved'];
+async function load(){
+  const {data,error}=await App.db.from('complaints').select('*').order('created_at',{ascending:false}).limit(25);
+  if(error) return App.msg('#list',error.message+' Did you run schema.sql?','err');
+  if(!data.length) return $('#list').innerHTML='No complaints yet. Log the first one.';
+  $('#list').innerHTML='<table><tr><th>Date</th><th>Complaint</th><th>Status</th></tr>'+data.map(c=>'<tr><td>'+App.fmt(c.created_at)+'</td><td>'+esc(c.ai_summary||c.description)+'<br><span class="mut">'+esc(c.area)+(c.room_number?' '+esc(c.room_number):'')+'</span> <span class="tag">'+esc(c.category||'Uncategorized')+'</span> <span class="'+c.severity+'">'+c.severity+'</span></td><td><select data-id="'+c.id+'" aria-label="Status">'+ST.map(s=>'<option'+(s==c.status?' selected':'')+'>'+s+'</option>').join('')+'</select></td></tr>').join('')+'</table>';
+}
+$('#list').addEventListener('change',async e=>{ if(!e.target.dataset.id) return; const {error}=await App.db.from('complaints').update({status:e.target.value}).eq('id',e.target.dataset.id); if(error) App.msg('#msg',error.message,'err'); });
+$('#f').addEventListener('submit',async e=>{ e.preventDefault(); const b=$('#save'); b.disabled=true;
+  const row={}; ['guest_name','room_number','area','channel','severity','description'].forEach(k=>row[k]=$('#'+k).value.trim()||null);
+  const {data,error}=await App.db.from('complaints').insert(row).select().single();
+  if(error){ b.disabled=false; return App.msg('#msg',error.message,'err'); }
+  let note='Complaint saved and categorized.', cls='ok';
+  try{ const a=await App.ai('categorize',{description:row.description,area:row.area}); await App.db.from('complaints').update({category:a.category,ai_summary:a.summary}).eq('id',data.id); }
+  catch(err){ note='Complaint saved. AI categorizing skipped: '+err.message; cls=''; }
+  App.msg('#msg',note,cls); $('#f').reset(); b.disabled=false; load(); });
+load(); })();
+</script></body></html>
